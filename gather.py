@@ -2,7 +2,6 @@
 import os
 import re
 import requests
-from bs4 import BeautifulSoup
 from urllib.parse import urljoin, urlparse
 import time
 
@@ -61,13 +60,16 @@ def main():
         response = requests.get(BASE_URL, timeout=30)
         response.raise_for_status()
         
-        soup = BeautifulSoup(response.content, 'html.parser')
-        
-        # Find all PDF links
+        # Find all PDF links using regex (no BeautifulSoup needed)
         pdf_links = []
-        for link in soup.find_all('a', href=True):
-            href = link['href']
-            if href.lower().endswith('.pdf') and 'booking' in href.lower():
+        content = response.text
+        
+        # Look for PDF links in the HTML
+        pdf_pattern = r'href=["\']([^"\']*\.pdf[^"\']*)["\']'
+        matches = re.findall(pdf_pattern, content, re.IGNORECASE)
+        
+        for href in matches:
+            if 'booking' in href.lower():
                 full_url = urljoin(BASE_URL, href)
                 filename = os.path.basename(urlparse(full_url).path)
                 pdf_links.append((full_url, filename))
