@@ -132,8 +132,8 @@ def extract_records(pdf_path):
                     while j < len(lines) and not name_row.match(lines[j][0]):
                         ln = lines[j][0].strip()
                         if ln:
-                            # Skip address lines (start with numbers)
-                            if re.match(r'^\d+', ln):
+                            # Skip address lines (start with numbers and contain street indicators)
+                            if re.match(r'^\d+.*(AVE|ST|RD|DR|BLVD|WAY|CT|PL|LN|CIR)', ln, re.IGNORECASE):
                                 j += 1
                                 continue
                             # Skip "Charge Description" header
@@ -144,7 +144,11 @@ def extract_records(pdf_path):
                             if ln.startswith("Page ") and " of " in ln:
                                 j += 1
                                 continue
-                            # Only add actual charge lines (start with "State")
+                            # Skip empty lines or just whitespace
+                            if not ln or ln.isspace():
+                                j += 1
+                                continue
+                            # Add actual charge lines (start with "State")
                             if ln.startswith("State "):
                                 rec['charges'].append(ln)
                         j += 1
