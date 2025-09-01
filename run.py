@@ -3,17 +3,50 @@ import os, io, shutil, re, json, requests, time
 import fitz, pdfplumber
 from PIL import Image
 
-WEBHOOK = "https://discord.com/api/webhooks/1412169034106929257/_VTUSe1FnH-lg_XqfLaR2lH-fd6-PKU2Myu7LAKp7FdVKFALcj7zRVSBG87SWo3R_3uR"
+WEBHOOK = "https://discord.com/api/webhooks/1412189613895717006/dzrqjw254DWOeTO_LOupunCEQ541iBunVNe4i1ckjL-WAJdiktzz5ftJ8v1xmPu_XKxR"
 SRC = "new"
 DST = "archive"
 GREY = 8421504
+
+# Discord rate limits: 30 messages per minute, 50 requests per second
+MESSAGES_PER_MINUTE = 30
+REQUESTS_PER_SECOND = 50
+MIN_DELAY_BETWEEN_MESSAGES = 60 / MESSAGES_PER_MINUTE  # 2 seconds
+MIN_DELAY_BETWEEN_REQUESTS = 1 / REQUESTS_PER_SECOND   # 0.02 seconds
+
+last_message_time = 0
+last_request_time = 0
 
 name_row = re.compile(
     r"^(?P<name>[A-Z ,'\-]+)\s+(?P<booked>\d{1,2}/\d{1,2}/\d{4}\s+\d{1,2}:\d{2}:\d{2}\s+[AP]M)\s+"
     r"(?P<dob>\d{1,2}/\d{1,2}/\d{4})\s+(?P<gender>[A-Z]+)\s+(?P<brought>.+)$"
 )
 
+def rate_limit():
+    """Ensure we don't exceed Discord's rate limits"""
+    global last_message_time, last_request_time
+    current_time = time.time()
+    
+    # Check message rate limit (30 per minute)
+    time_since_last_message = current_time - last_message_time
+    if time_since_last_message < MIN_DELAY_BETWEEN_MESSAGES:
+        sleep_time = MIN_DELAY_BETWEEN_MESSAGES - time_since_last_message
+        print(f"Rate limiting: sleeping {sleep_time:.1f}s")
+        time.sleep(sleep_time)
+    
+    # Check request rate limit (50 per second)
+    time_since_last_request = current_time - last_request_time
+    if time_since_last_request < MIN_DELAY_BETWEEN_REQUESTS:
+        sleep_time = MIN_DELAY_BETWEEN_REQUESTS - time_since_last_request
+        time.sleep(sleep_time)
+    
+    last_message_time = time.time()
+    last_request_time = time.time()
+
 def post_embed(record, image_bytes):
+    # Apply rate limiting before making the request
+    rate_limit()
+    
     desc = (
         f"Booking: {record['booked']}\nDOB: {record['dob']}\nGender: {record['gender']}\n"
         f"Arrestor: {record['brought']}\nCharges:\n" + ("\n".join(record['charges']) or "None")
@@ -220,7 +253,6 @@ def main():
             print("Records", len(recs))
             for rec, img in recs:
                 post_embed(rec, img)
-                time.sleep(2)  # 2 second cooldown between webhook posts
         except Exception as e:
             print("FAILED", f, e)
         try:
