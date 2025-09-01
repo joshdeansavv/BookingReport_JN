@@ -83,6 +83,7 @@ def extract_records(pdf_path):
                 except Exception:
                     continue
 
+            # If no images found with coordinates, try fitz method
             if not page_img_regions:
                 imgs = doc[pidx].get_images(full=True) or []
                 seq = []
@@ -100,6 +101,26 @@ def extract_records(pdf_path):
                         continue
                 for b in seq:
                     page_img_regions.append({"mid_y": None, "bytes": b})
+            
+            # If we still have no images, try extracting all images from the page
+            if not page_img_regions:
+                try:
+                    # Get all images from the page using fitz
+                    image_list = doc[pidx].get_images()
+                    for img_index, img in enumerate(image_list):
+                        try:
+                            xref = img[0]
+                            pix = fitz.Pixmap(doc, xref)
+                            if pix.n - pix.alpha < 4:
+                                imgbytes = pix.tobytes("png")
+                            else:
+                                pix = fitz.Pixmap(fitz.csRGB, pix)
+                                imgbytes = pix.tobytes("png")
+                            page_img_regions.append({"mid_y": None, "bytes": imgbytes})
+                        except Exception:
+                            continue
+                except Exception:
+                    pass
 
             name_entries = []
             for idx, (text, top) in enumerate(lines):
@@ -121,15 +142,22 @@ def extract_records(pdf_path):
             if all(r["mid_y"] is not None for r in page_img_regions):
                 name_entries.sort(key=lambda x: x["top"])
                 page_img_regions.sort(key=lambda x: x["mid_y"])
-                if len(page_img_regions) >= len(name_entries):
-                    for i, ne in enumerate(name_entries):
-                        img = page_img_regions[i]["bytes"] if i < len(page_img_regions) else None
-                        out.append((ne["rec"], img))
-                else:
-                    for i, ne in enumerate(name_entries):
-                        best = min(page_img_regions, key=lambda im: abs(im["mid_y"] - ne["top"])) if page_img_regions else None
-                        img = best["bytes"] if best else None
-                        out.append((ne["rec"], img))
+                
+                for ne in name_entries:
+                    # Find image closest to this name entry
+                    # Images are typically positioned just above the name text
+                    best_img = None
+                    min_distance = float('inf')
+                    
+                    for img_region in page_img_regions:
+                        # Calculate distance between image center and name position
+                        distance = abs(img_region["mid_y"] - ne["top"])
+                        if distance < min_distance:
+                            min_distance = distance
+                            best_img = img_region
+                    
+                    img_bytes = best_img["bytes"] if best_img else None
+                    out.append((ne["rec"], img_bytes))
             else:
                 imgs_seq = [r["bytes"] for r in page_img_regions]
                 for i, ne in enumerate(name_entries):
