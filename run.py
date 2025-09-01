@@ -143,18 +143,28 @@ def extract_records(pdf_path):
                 name_entries.sort(key=lambda x: x["top"])
                 page_img_regions.sort(key=lambda x: x["mid_y"])
                 
+                # Create a list to track which images have been used
+                used_images = set()
+                
                 for ne in name_entries:
-                    # Find image closest to this name entry
-                    # Images are typically positioned just above the name text
+                    # Find image closest to this name entry that hasn't been used
                     best_img = None
                     min_distance = float('inf')
+                    best_img_index = -1
                     
-                    for img_region in page_img_regions:
+                    for i, img_region in enumerate(page_img_regions):
+                        if i in used_images:
+                            continue
                         # Calculate distance between image center and name position
                         distance = abs(img_region["mid_y"] - ne["top"])
                         if distance < min_distance:
                             min_distance = distance
                             best_img = img_region
+                            best_img_index = i
+                    
+                    # Mark this image as used
+                    if best_img_index >= 0:
+                        used_images.add(best_img_index)
                     
                     img_bytes = best_img["bytes"] if best_img else None
                     out.append((ne["rec"], img_bytes))
