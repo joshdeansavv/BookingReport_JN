@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-import os, io, shutil, re, json, requests
+import os, io, shutil, re, json, requests, time
 import fitz, pdfplumber
 from PIL import Image
 
@@ -220,6 +220,7 @@ def main():
             print("Records", len(recs))
             for rec, img in recs:
                 post_embed(rec, img)
+                time.sleep(2)  # 2 second cooldown between webhook posts
         except Exception as e:
             print("FAILED", f, e)
         try:
