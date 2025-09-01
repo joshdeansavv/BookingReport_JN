@@ -131,8 +131,22 @@ def extract_records(pdf_path):
                     j = idx + 1
                     while j < len(lines) and not name_row.match(lines[j][0]):
                         ln = lines[j][0].strip()
-                        if ln and not ln.startswith("Charge"):
-                            rec['charges'].append(ln)
+                        if ln:
+                            # Skip address lines (start with numbers)
+                            if re.match(r'^\d+', ln):
+                                j += 1
+                                continue
+                            # Skip "Charge Description" header
+                            if ln.startswith("Charge Description"):
+                                j += 1
+                                continue
+                            # Skip page numbers
+                            if ln.startswith("Page ") and " of " in ln:
+                                j += 1
+                                continue
+                            # Only add actual charge lines (start with "State")
+                            if ln.startswith("State "):
+                                rec['charges'].append(ln)
                         j += 1
                     name_entries.append({"rec": rec, "top": top})
 
