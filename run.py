@@ -51,14 +51,18 @@ def post_embed(record, image_bytes):
         f"**Booking:** {record['booked']}\n**DOB:** {record['dob']}\n**Gender:** {record['gender']}\n"
         f"**Arrestor:** {record['brought']}\n**Charges:**\n" + ("\n".join(record['charges']) or "None")
     )
+    
+    # Create embed with large thumbnail at top right
     embed = {"title": record['name'], "description": desc, "color": GREY}
+    if image_bytes:
+        embed["thumbnail"] = {"url": "attachment://mug.png"}
+    
     payload = {"embeds": [embed]}
     data = {"payload_json": json.dumps(payload)}
     files = {}
     if image_bytes:
         files["file"] = ("mug.png", image_bytes, "image/png")
-        embed["image"] = {"url": "attachment://mug.png"}  # Changed from thumbnail to image for larger display
-        data = {"payload_json": json.dumps({"embeds": [embed]})}
+    
     try:
         r = requests.post(WEBHOOK, data=data, files=files or None, timeout=30)
         print("POST", record['name'], getattr(r, "status_code", None))
