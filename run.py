@@ -4,8 +4,8 @@ import fitz, pdfplumber
 from PIL import Image
 
 WEBHOOK = "https://discord.com/api/webhooks/1412169034106929257/_VTUSe1FnH-lg_XqfLaR2lH-fd6-PKU2Myu7LAKp7FdVKFALcj7zRVSBG87SWo3R_3uR"
-SRC = "jailbot/new"
-DST = "jailbot/archive"
+SRC = "new"
+DST = "archive"
 GREY = 8421504
 
 name_row = re.compile(
