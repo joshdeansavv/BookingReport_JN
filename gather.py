@@ -25,19 +25,7 @@ def get_existing_files():
     
     return existing_files
 
-def clean_folders():
-    """Remove all existing PDF files to start fresh"""
-    print("Cleaning existing files...")
-    
-    for folder in [NEW_FOLDER, ARCHIVE_FOLDER]:
-        if os.path.exists(folder):
-            for file in os.listdir(folder):
-                if file.lower().endswith('.pdf'):
-                    filepath = os.path.join(folder, file)
-                    os.remove(filepath)
-                    print(f"Removed: {file}")
-    
-    print("Folders cleaned!")
+
 
 def download_file(url, filename):
     """Download a file from URL"""
@@ -57,16 +45,13 @@ def download_file(url, filename):
         return False
 
 def main():
-    print("=== Mesa County Booking Report Gatherer (FRESH START) ===")
+    print("=== Mesa County Booking Report Gatherer ===")
     
     # Ensure folders exist
     os.makedirs(NEW_FOLDER, exist_ok=True)
     os.makedirs(ARCHIVE_FOLDER, exist_ok=True)
     
-    # Clean existing files to start fresh
-    clean_folders()
-    
-    # Get existing files (should be empty now)
+    # Get existing files
     existing_dates = get_existing_files()
     print(f"Found {len(existing_dates)} existing dates: {sorted(existing_dates)}")
     
