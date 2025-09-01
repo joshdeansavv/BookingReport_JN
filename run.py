@@ -75,6 +75,19 @@ def extract_records(pdf_path):
                     if full_img and x1 > x0 and bottom > top:
                         sx = full_img.width / page_pp.width if page_pp.width else 1.0
                         sy = full_img.height / page_pp.height if page_pp.height else 1.0
+                        
+                        # Skip header images (usually at top of page, small, or logo-like)
+                        img_height = (bottom - top) * sy
+                        img_width = (x1 - x0) * sx
+                        
+                        # Skip images that are too small (likely logos/headers)
+                        if img_height < 50 or img_width < 50:
+                            continue
+                            
+                        # Skip images at the very top of the page (headers)
+                        if top * sy < 100:
+                            continue
+                            
                         crop = full_img.crop((int(x0 * sx), int(top * sy), int(x1 * sx), int(bottom * sy)))
                         buf = io.BytesIO()
                         crop.save(buf, "PNG")
