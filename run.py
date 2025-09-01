@@ -6,7 +6,7 @@ from PIL import Image
 WEBHOOK = "https://discord.com/api/webhooks/1412189613895717006/dzrqjw254DWOeTO_LOupunCEQ541iBunVNe4i1ckjL-WAJdiktzz5ftJ8v1xmPu_XKxR"
 SRC = "new"
 DST = "archive"
-GREY = 8421504
+GREY = 0x1f1f1f
 
 # Discord rate limits: 30 messages per minute, 50 requests per second
 MESSAGES_PER_MINUTE = 30
@@ -48,8 +48,8 @@ def post_embed(record, image_bytes):
     rate_limit()
     
     desc = (
-        f"Booking: {record['booked']}\nDOB: {record['dob']}\nGender: {record['gender']}\n"
-        f"Arrestor: {record['brought']}\nCharges:\n" + ("\n".join(record['charges']) or "None")
+        f"**Booking:** {record['booked']}\n**DOB:** {record['dob']}\n**Gender:** {record['gender']}\n"
+        f"**Arrestor:** {record['brought']}\n**Charges:**\n" + ("\n".join(record['charges']) or "None")
     )
     embed = {"title": record['name'], "description": desc, "color": GREY}
     payload = {"embeds": [embed]}
@@ -57,7 +57,7 @@ def post_embed(record, image_bytes):
     files = {}
     if image_bytes:
         files["file"] = ("mug.png", image_bytes, "image/png")
-        embed["thumbnail"] = {"url": "attachment://mug.png"}
+        embed["image"] = {"url": "attachment://mug.png"}  # Changed from thumbnail to image for larger display
         data = {"payload_json": json.dumps({"embeds": [embed]})}
     try:
         r = requests.post(WEBHOOK, data=data, files=files or None, timeout=30)
