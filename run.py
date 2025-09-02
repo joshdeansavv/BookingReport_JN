@@ -3,7 +3,7 @@ import os, io, shutil, re, json, requests, time
 import fitz, pdfplumber
 from PIL import Image
 
-WEBHOOK = "https://discord.com/api/webhooks/1412189613895717006/dzrqjw254DWOeTO_LOupunCEQ541iBunVNe4i1ckjL-WAJdiktzz5ftJ8v1xmPu_XKxR"
+WEBHOOK = "YOUR_DISCORD_WEBHOOK_URL_HERE"
 SRC = "new"
 DST = "archive"
 GREY = 0x1f1f1f
