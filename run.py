@@ -11,7 +11,7 @@ GREY = 0x1f1f1f
 # Discord rate limits: 30 messages per minute, 50 requests per second
 MESSAGES_PER_MINUTE = 30
 REQUESTS_PER_SECOND = 50
-MIN_DELAY_BETWEEN_MESSAGES = 60 / MESSAGES_PER_MINUTE  # 2 seconds
+MIN_DELAY_BETWEEN_MESSAGES = 5  # TEMPORARY: 5 seconds between messages
 MIN_DELAY_BETWEEN_REQUESTS = 1 / REQUESTS_PER_SECOND   # 0.02 seconds
 
 last_message_time = 0
@@ -54,13 +54,13 @@ def post_embed(record, image_bytes):
     
     # Create embed with large thumbnail at top right
     embed = {"title": record['name'], "description": desc, "color": GREY}
-    if image_bytes:
+    if image_bytes and image_bytes is not None:
         embed["thumbnail"] = {"url": "attachment://mug.png"}
     
     payload = {"embeds": [embed]}
     data = {"payload_json": json.dumps(payload)}
     files = {}
-    if image_bytes:
+    if image_bytes and image_bytes is not None:
         files["file"] = ("mug.png", image_bytes, "image/png")
     
     try:
@@ -68,6 +68,41 @@ def post_embed(record, image_bytes):
         print("POST", record['name'], getattr(r, "status_code", None))
     except Exception as e:
         print("POST ERROR", record.get("name"), e)
+
+def post_date_embed(filename):
+    """Send a date embed to show which document is being processed"""
+    # Apply rate limiting before making the request
+    rate_limit()
+    
+    # Extract date from filename like "Mesa County Jail Records (3) 2025-08-28.pdf"
+    import re
+    date_match = re.search(r'(\d{4}-\d{2}-\d{2})', filename)
+    if date_match:
+        date_str = date_match.group(1)
+        # Convert to friendly format
+        from datetime import datetime
+        try:
+            date_obj = datetime.strptime(date_str, '%Y-%m-%d')
+            friendly_date = date_obj.strftime('%A, %B %d, %Y')
+        except:
+            friendly_date = date_str
+    else:
+        friendly_date = "Unknown Date"
+    
+    embed = {
+        "title": "📅 Processing Document",
+        "description": f"**Date:** {friendly_date}\n**File:** {filename}",
+        "color": 0x00ff00  # Green color for date embeds
+    }
+    
+    payload = {"embeds": [embed]}
+    data = {"payload_json": json.dumps(payload)}
+    
+    try:
+        r = requests.post(WEBHOOK, data=data, timeout=30)
+        print("DATE POST", friendly_date, getattr(r, "status_code", None))
+    except Exception as e:
+        print("DATE POST ERROR", e)
 
 def extract_records(pdf_path):
     out = []
@@ -129,9 +164,27 @@ def extract_records(pdf_path):
                         buf = io.BytesIO()
                         crop.save(buf, "PNG")
                         buf.seek(0)
-                        page_img_regions.append({"mid_y": (top + bottom) * 0.5 * sy, "bytes": buf.getvalue()})
+                        img_bytes = buf.getvalue()
+                        
+                        # Validate the image bytes before adding
+                        if img_bytes and len(img_bytes) > 100:  # Basic validation
+                            page_img_regions.append({"mid_y": (top + bottom) * 0.5, "bytes": img_bytes})
+                        else:
+                            # Add placeholder for invalid/broken image
+                            page_img_regions.append({"mid_y": (top + bottom) * 0.5, "bytes": None})
                 except Exception:
-                    continue
+                    # Add placeholder for failed extraction to maintain alignment
+                    # We need to estimate position for failed extractions
+                    try:
+                        x0 = int(im.get("x0", 0))
+                        top = int(im.get("top", 0))
+                        x1 = int(im.get("x1", 0))
+                        bottom = int(im.get("bottom", 0))
+                        if x1 > x0 and bottom > top:
+                            page_img_regions.append({"mid_y": (top + bottom) * 0.5, "bytes": None})
+                    except:
+                        # If we can't even get position, skip this image entirely
+                        continue
 
             # If no images found with coordinates, try fitz method
             if not page_img_regions:
@@ -146,7 +199,9 @@ def extract_records(pdf_path):
                         else:
                             pix = fitz.Pixmap(fitz.csRGB, pix)
                             imgbytes = pix.tobytes("png")
-                        seq.append(imgbytes)
+                        # Validate the image bytes before adding
+                        if imgbytes and len(imgbytes) > 100:  # Basic validation
+                            seq.append(imgbytes)
                     except Exception:
                         continue
                 for b in seq:
@@ -166,7 +221,9 @@ def extract_records(pdf_path):
                             else:
                                 pix = fitz.Pixmap(fitz.csRGB, pix)
                                 imgbytes = pix.tobytes("png")
-                            page_img_regions.append({"mid_y": None, "bytes": imgbytes})
+                            # Validate the image bytes before adding
+                            if imgbytes and len(imgbytes) > 100:  # Basic validation
+                                page_img_regions.append({"mid_y": None, "bytes": imgbytes})
                         except Exception:
                             continue
                 except Exception:
@@ -207,40 +264,48 @@ def extract_records(pdf_path):
             if not name_entries:
                 continue
 
-            if all(r["mid_y"] is not None for r in page_img_regions):
-                name_entries.sort(key=lambda x: x["top"])
-                page_img_regions.sort(key=lambda x: x["mid_y"])
-                
-                # Create a list to track which images have been used
-                used_images = set()
-                
-                for ne in name_entries:
-                    # Find image closest to this name entry that hasn't been used
-                    best_img = None
-                    min_distance = float('inf')
-                    best_img_index = -1
-                    
-                    for i, img_region in enumerate(page_img_regions):
-                        if i in used_images:
-                            continue
-                        # Calculate distance between image center and name position
+            # Use optimal matching - find the best global assignment
+            name_entries.sort(key=lambda x: x["top"])
+            page_img_regions.sort(key=lambda x: x["mid_y"] if x["mid_y"] is not None else float('inf'))
+            
+            # Create distance matrix for all name-image pairs
+            distances = []
+            for i, ne in enumerate(name_entries):
+                for j, img_region in enumerate(page_img_regions):
+                    if img_region["mid_y"] is not None:
                         distance = abs(img_region["mid_y"] - ne["top"])
-                        if distance < min_distance:
-                            min_distance = distance
-                            best_img = img_region
-                            best_img_index = i
-                    
-                    # Mark this image as used
-                    if best_img_index >= 0:
-                        used_images.add(best_img_index)
-                    
-                    img_bytes = best_img["bytes"] if best_img else None
-                    out.append((ne["rec"], img_bytes))
-            else:
-                imgs_seq = [r["bytes"] for r in page_img_regions]
-                for i, ne in enumerate(name_entries):
-                    img = imgs_seq[i] if i < len(imgs_seq) else None
-                    out.append((ne["rec"], img))
+                    else:
+                        distance = float('inf')
+                    distances.append((distance, i, j))
+            
+            # Sort by distance to get optimal assignments
+            distances.sort()
+            
+            # Track which names and images have been assigned
+            assigned_names = set()
+            assigned_images = set()
+            
+            # Assign images to names in order of best distance
+            for distance, name_idx, img_idx in distances:
+                if name_idx not in assigned_names and img_idx not in assigned_images:
+                    if distance < 200:  # Only assign if reasonably close
+                        assigned_names.add(name_idx)
+                        assigned_images.add(img_idx)
+            
+            # Create results in original order
+            for i, ne in enumerate(name_entries):
+                if i in assigned_names:
+                    # Find which image was assigned to this name
+                    for distance, name_idx, img_idx in distances:
+                        if name_idx == i and img_idx in assigned_images:
+                            img_bytes = page_img_regions[img_idx]["bytes"]
+                            break
+                    else:
+                        img_bytes = None
+                else:
+                    img_bytes = None
+                
+                out.append((ne["rec"], img_bytes))
     return out
 
 def main():
@@ -249,9 +314,14 @@ def main():
     files = sorted([f for f in os.listdir(SRC) if f.lower().endswith(".pdf")])
     if not files:
         print("No PDFs in", SRC); return
-    for f in files:
+    
+    for i, f in enumerate(files):
         path = os.path.join(SRC, f)
         print("Process", f)
+        
+        # Send date embed before processing each document
+        post_date_embed(f)
+        
         try:
             recs = extract_records(path)
             print("Records", len(recs))
@@ -264,6 +334,11 @@ def main():
             print("Archived", f)
         except Exception as e:
             print("Archive move failed", f, e)
+        
+        # TEMPORARY: 5 second delay between documents
+        if i < len(files) - 1:  # Don't delay after the last document
+            print("Waiting 5 seconds before next document...")
+            time.sleep(5)
 
 if __name__ == "__main__":
     main()

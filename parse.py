@@ -144,7 +144,14 @@ def extract_records(pdf_path):
                         buf = io.BytesIO()
                         crop.save(buf, "PNG")
                         buf.seek(0)
-                        page_img_regions.append({"mid_y": (top + bottom) * 0.5 * sy, "bytes": buf.getvalue()})
+                        img_bytes = buf.getvalue()
+                        
+                        # Validate the image bytes before adding
+                        if img_bytes and len(img_bytes) > 100:  # Basic validation
+                            page_img_regions.append({"mid_y": (top + bottom) * 0.5, "bytes": img_bytes})
+                        else:
+                            # Add placeholder for invalid/broken image
+                            page_img_regions.append({"mid_y": (top + bottom) * 0.5, "bytes": None})
                 except Exception:
                     continue
 
@@ -161,7 +168,9 @@ def extract_records(pdf_path):
                         else:
                             pix = fitz.Pixmap(fitz.csRGB, pix)
                             imgbytes = pix.tobytes("png")
-                        seq.append(imgbytes)
+                        # Validate the image bytes before adding
+                        if imgbytes and len(imgbytes) > 100:  # Basic validation
+                            seq.append(imgbytes)
                     except Exception:
                         continue
                 for b in seq:
@@ -181,7 +190,9 @@ def extract_records(pdf_path):
                             else:
                                 pix = fitz.Pixmap(fitz.csRGB, pix)
                                 imgbytes = pix.tobytes("png")
-                            page_img_regions.append({"mid_y": None, "bytes": imgbytes})
+                            # Validate the image bytes before adding
+                            if imgbytes and len(imgbytes) > 100:  # Basic validation
+                                page_img_regions.append({"mid_y": None, "bytes": imgbytes})
                         except Exception:
                             continue
                 except Exception:
@@ -222,40 +233,48 @@ def extract_records(pdf_path):
             if not name_entries:
                 continue
 
-            if all(r["mid_y"] is not None for r in page_img_regions):
-                name_entries.sort(key=lambda x: x["top"])
-                page_img_regions.sort(key=lambda x: x["mid_y"])
-                
-                # Create a list to track which images have been used
-                used_images = set()
-                
-                for ne in name_entries:
-                    # Find image closest to this name entry that hasn't been used
-                    best_img = None
-                    min_distance = float('inf')
-                    best_img_index = -1
-                    
-                    for i, img_region in enumerate(page_img_regions):
-                        if i in used_images:
-                            continue
-                        # Calculate distance between image center and name position
+            # Use optimal matching - find the best global assignment
+            name_entries.sort(key=lambda x: x["top"])
+            page_img_regions.sort(key=lambda x: x["mid_y"] if x["mid_y"] is not None else float('inf'))
+            
+            # Create distance matrix for all name-image pairs
+            distances = []
+            for i, ne in enumerate(name_entries):
+                for j, img_region in enumerate(page_img_regions):
+                    if img_region["mid_y"] is not None:
                         distance = abs(img_region["mid_y"] - ne["top"])
-                        if distance < min_distance:
-                            min_distance = distance
-                            best_img = img_region
-                            best_img_index = i
-                    
-                    # Mark this image as used
-                    if best_img_index >= 0:
-                        used_images.add(best_img_index)
-                    
-                    img_bytes = best_img["bytes"] if best_img else None
-                    out.append((ne["rec"], img_bytes))
-            else:
-                imgs_seq = [r["bytes"] for r in page_img_regions]
-                for i, ne in enumerate(name_entries):
-                    img = imgs_seq[i] if i < len(imgs_seq) else None
-                    out.append((ne["rec"], img))
+                    else:
+                        distance = float('inf')
+                    distances.append((distance, i, j))
+            
+            # Sort by distance to get optimal assignments
+            distances.sort()
+            
+            # Track which names and images have been assigned
+            assigned_names = set()
+            assigned_images = set()
+            
+            # Assign images to names in order of best distance
+            for distance, name_idx, img_idx in distances:
+                if name_idx not in assigned_names and img_idx not in assigned_images:
+                    if distance < 200:  # Only assign if reasonably close
+                        assigned_names.add(name_idx)
+                        assigned_images.add(img_idx)
+            
+            # Create results in original order
+            for i, ne in enumerate(name_entries):
+                if i in assigned_names:
+                    # Find which image was assigned to this name
+                    for distance, name_idx, img_idx in distances:
+                        if name_idx == i and img_idx in assigned_images:
+                            img_bytes = page_img_regions[img_idx]["bytes"]
+                            break
+                    else:
+                        img_bytes = None
+                else:
+                    img_bytes = None
+                
+                out.append((ne["rec"], img_bytes))
     return out
 
 def main():
